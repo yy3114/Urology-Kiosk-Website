@@ -6,6 +6,8 @@
     <title>泌尿系統自動診斷機</title>
     <!-- 載入 Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Tone.js CDN for Sound Effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
         /* 使用 Inter 字體 */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
@@ -25,7 +27,7 @@
         .item-button {
             transition: transform 0.1s, box-shadow 0.1s;
             background-image: linear-gradient(135deg, #2a3c5a 0%, #1f2d42 100%);
-            /* 【已修改】確保英文字不被切割，只在單詞間隔處換行 */
+            /* 確保英文字不被切割，只在單詞間隔處換行 */
             word-break: normal; 
             overflow-wrap: break-word; 
             hyphens: manual; 
@@ -42,20 +44,32 @@
             box-shadow: 0 0 10px #facc15;
             background-image: linear-gradient(135deg, #facc15 0%, #eab308 100%);
             color: #1f2d42; /* 深藍色文字 */
-            /* 【已修改】確保英文字不被切割，只在單詞間隔處換行 */
+            /* 確保英文字不被切割，只在單詞間隔處換行 */
             word-break: normal;
             overflow-wrap: break-word;
             hyphens: manual;
         }
+        
+        /* 健康建議卡出口槽容器樣式 */
         .result-card-slot {
             background-color: #1f2d42;
-            /* 增加邊框，讓出口槽更顯眼 */
-            border: 3px solid #ff0000; 
-            border-top: 5px solid #00c7e5;
+            padding: 1rem; /* 內部間距 */
+            border-radius: 0 0 0.75rem 0.75rem; /* 僅底部圓角 */
             position: relative;
-            overflow: hidden;
+            min-height: 6rem; /* 保持最小高度 */
         }
-        /* 模擬印表機出紙動畫，從頂部逐漸出現 */
+
+        /* 模擬紅粗線的樣式 (用來取代邊框) */
+        .red-divider {
+            height: 8px; /* 粗線高度 */
+            background-color: #ff0000; /* 紅色 */
+            width: 100%;
+            /* 絕對定位，貼合在 `resultCardSlot` 上方，並讓其邊緣發光 */
+            box-shadow: 0 0 5px #ff0000, 0 0 15px rgba(255, 0, 0, 0.8); 
+            transition: box-shadow 0.3s;
+        }
+        
+        /* 模擬印表機出紙動畫，從頂部逐漸出現 (持續 1.5s) */
         @keyframes printOut {
             0% {
                 transform: translateY(-100%);
@@ -68,6 +82,21 @@
         }
         .print-animation {
             animation: printOut 1.5s ease-out forwards;
+        }
+
+        /* 紅色霓虹閃爍動畫 */
+        @keyframes neon-flash-red {
+            0%, 100% {
+                box-shadow: 0 0 5px #ff0000, 0 0 15px rgba(255, 0, 0, 0.8);
+            }
+            50% {
+                box-shadow: 0 0 2px #ff0000, 0 0 8px rgba(255, 0, 0, 0.4);
+            }
+        }
+
+        /* 應用於紅粗線的閃爍類別 */
+        .flashing-neon-divider {
+            animation: neon-flash-red 0.5s infinite alternate;
         }
     </style>
 </head>
@@ -85,7 +114,7 @@
         <!-- 顯示螢幕 (字體已加大: text-xl sm:text-2xl，高度已增加: h-28 sm:h-36) -->
         <div id="display" class="vending-display p-4 h-28 sm:h-36 mb-6 rounded-lg text-xl sm:text-2xl font-mono text-[#00c7e5] flex flex-col justify-center items-center text-center bg-[#101c30]">
             <!-- 初始文字已更新 -->
-            <p id="instructionText" class="animate-pulse">泌醫關心您。歡迎使用，請選擇您的主要不適類別...</p>
+            <p id="instructionText" class="animate-pulse">泌醫關心您。歡迎使用，請選擇您的性別...</p>
             <!-- 次要提示字體也稍微加大到 text-base -->
             <p id="selectionText" class="text-base text-gray-400 mt-1"></p>
         </div>
@@ -96,6 +125,7 @@
         </div>
 
         <!-- 結果/控制面板 -->
+        <!-- 移除 mb-6，讓其與紅線更靠近 -->
         <div class="p-4 rounded-lg bg-[#101c30] border border-gray-700">
             <h2 class="text-xl font-bold text-center mb-3 text-gray-300">控制面板</h2>
             <div class="flex justify-around space-x-4">
@@ -103,6 +133,218 @@
                     確認選擇 (✓)
                 </button>
                 <button id="backButton" class="w-full p-3 font-bold rounded-xl text-lg bg-blue-600 hover:bg-blue-700 transition duration-150 hidden">
+                    返回上層 (←)
+                </button>
+                <button id="resetButton" class="w-full p-3 font-bold rounded-xl text-lg bg-red-600 hover:bg-red-700 transition duration-150">
+                    重新開始 (⟲)
+                </button>
+            </div>
+        </div>
+
+        <!-- 診斷卡出口槽：根據用戶要求，將上緣邊框替換為獨立的紅粗線 DIV -->
+        <div class="mt-4">
+            <!-- 紅粗線：用於分隔控制面板和出口槽，並進行霓虹閃爍 -->
+            <div id="redDivider" class="red-divider"></div>
+
+            <!-- 出口槽容器：移除所有邊框和頂部邊緣樣式，僅保留背景和底部圓角 -->
+            <!-- 移除 mt-6，改為由紅線間隔 -->
+            <div id="resultCardSlot" class="result-card-slot">
+                <p class="text-sm text-gray-500 mb-2">健康建議卡出口 (請在此領取):</p>
+                <!-- 確保初始狀態是 hidden -->
+                <div id="resultCard" class="hidden bg-gray-100 p-4 rounded-lg text-gray-900 shadow-xl"> 
+                    <h3 class="text-xl font-bold text-blue-600 mb-2">診斷卡已發放</h3>
+                    <p id="cardTitle" class="font-semibold text-lg"></p>
+                    <!-- 確保使用 DIV 容器以容納複雜的 HTML 內容 -->
+                    <div id="cardContent" class="text-sm mt-2"></div> 
+                    <p class="text-xs text-red-600 mt-3 font-bold">※ 緊急免責聲明：本卡不具醫療診斷效力，請務必諮詢泌尿科醫師。</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 設定全域變數
+        const display = document.getElementById('display');
+        const instructionText = document.getElementById('instructionText');
+        const selectionText = document.getElementById('selectionText');
+        const optionsGrid = document.getElementById('optionsGrid');
+        const confirmButton = document.getElementById('confirmButton');
+        const backButton = document.getElementById('backButton');
+        const resetButton = document.getElementById('resetButton');
+        const redDivider = document.getElementById('redDivider'); // 新增紅線元素
+        const resultCardSlot = document.getElementById('resultCardSlot'); 
+        const resultCard = document.getElementById('resultCard');
+        const cardTitle = document.getElementById('cardTitle');
+        const cardContent = document.getElementById('cardContent');
+
+        // 模擬診斷機狀態
+        let gameState = 'GENDER'; // 新增 GENDER 階段
+        let selectedGender = null;
+        let selectedCategory = null; // CATEGORY, SYMPTOM, SUBSYMPTOM, PROCESSING, RESULT
+        let selectedSymptom = null;
+        let selectedSubsymptoms = [];
+        let neonTimeout = null; // 用於儲存霓虹閃爍定時器
+
+        // Tone.js Synth 初始化
+        let synth = null; 
+
+        // 音效生成邏輯：兩聲較短、較輕的提示音
+        function playPrintSound() {
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    _generateSound();
+                }).catch(err => {
+                    console.error("Failed to start Tone.js AudioContext:", err);
+                });
+            } else {
+                _generateSound();
+            }
+        }
+
+        function _generateSound() {
+            // 使用 PolySynth 模擬電子嗶聲
+            if (!synth) {
+                synth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: "square" }, // 方波產生更清晰的電子音
+                    envelope: {
+                        attack: 0.01,
+                        decay: 0.1,
+                        sustain: 0.0,
+                        release: 0.3
+                    }
+                }).toDestination();
+            }
+            
+            const volume = 0.5; // 減弱音量至 50%
+            const now = Tone.now();
+            const duration = "8n"; // 八分音符，較短
+
+            // 第一聲：低音 C4
+            synth.triggerAttackRelease("C4", duration, now, volume); 
+            // 第二聲：高音 D4，間隔 0.2 秒
+            synth.triggerAttackRelease("D4", duration, now + 0.2, volume); 
+        }
+
+        // 模擬數據庫：泌尿系統類別與症狀
+        const data = {
+            '排尿異常（Urinary Dysfunction）': {
+                icon: '💧',
+                symptoms: {
+                    '頻尿/夜尿（Frequency/Nocturia）': {
+                        description: '常見於攝護腺肥大、膀胱過動症、神經性膀胱等。建議減少刺激性飲料及睡前飲水，並進行排尿訓練。',
+                        subsymptoms: {
+                            '日間頻尿（Daytime Frequency）': '可能與咖啡因或液體攝取過多相關。建議監測每日飲水量。',
+                            '夜間多尿（Nocturia）': '可能與心臟或腎臟問題相關。若超過2次/夜，需檢查血糖及心功能。',
+                            '伴隨急尿（With Urgency）': '暗示膀胱過動症。考慮抗膽鹼藥物治療。'
+                        }
+                    },
+                    '排尿疼痛（Dysuria）': {
+                        description: '排尿時伴隨灼熱、刺痛或不適感。最常見於泌尿道感染（UTI）或膀胱炎，但結石或攝護腺炎亦可能引起。需進行尿液常規檢查。',
+                        subsymptoms: {
+                            '灼熱感（Burning Sensation）': '高度提示尿道或膀胱刺激，常見於膀胱炎。',
+                            '刺痛感（Stabbing Pain）': '可能與結石或尿道炎症相關。',
+                            '排尿後疼痛（Pain after Voiding）': '多與膀胱痙攣相關，見於間質性膀胱炎。',
+                            '尿道口疼痛（Meatal Pain）': '提示尿道炎或龜頭炎。'
+                        }
+                    },
+                    '尿急/急迫性尿失禁（Urgency/Urge Incontinence）': {
+                        description: '常見於膀胱過動症、神經性膀胱等。建議進行骨盆底肌訓練（凱格爾運動）。',
+                        subsymptoms: {
+                            '突然強烈尿意（Sudden Urge）': '可能與感染或神經問題相關。需尿培養檢查。',
+                            '漏尿發生（Leakage）': '區分急迫性失禁。考慮藥物治療。',
+                            '頻繁發作（Frequent Episodes）': '記錄日誌，尋求泌尿科協助。'
+                        }
+                    },
+                    '排尿困難（Voiding Difficulty）': {
+                        description: '表現為解尿費力、尿流變細、遲緩、斷續、餘尿感。常見於攝護腺肥大、尿道狹窄。需流量檢查。',
+                        subsymptoms: {
+                            '起始延遲（Hesitancy）': '常見於前列腺肥大。建議alpha阻斷劑。',
+                            '尿流中斷（Intermittency）': '可能尿道狹窄。需影像學檢查。',
+                            '餘尿感（Post-void Dribbling）': '暗示膀胱頸問題。進行殘尿量測量。'
+                        }
+                    },
+                }
+            },
+            '尿液異常（Urine Abnormalities）': {
+                icon: '🩸',
+                symptoms: {
+                    '血尿（Hematuria）': {
+                        description: '包括顯微血尿、肉眼血尿。需警覺感染、結石、腫瘤。尤其年長者，需立即排除惡性腫瘤。',
+                        subsymptoms: {
+                            '肉眼血尿（Gross Hematuria）': '無論是否疼痛，都是嚴重徵兆。請在24小時內看泌尿科。',
+                            '顯微血尿（Microscopic Hematuria）': '通常健康檢查發現。若合併蛋白尿，需檢查腎臟病變。',
+                            '間歇性（Intermittent）': '檢查凝血功能或影像學。'
+                        }
+                    },
+                    '膿尿/尿液混濁或異味（Pyuria/Cloudy or Odorous Urine）': {
+                        description: '多數與感染或脫水有關。若伴隨發燒，應儘快進行尿液分析及細菌培養。',
+                        subsymptoms: {
+                            '伴隨發燒（With Fever）': '高度懷疑UTI。立即抗生素治療。',
+                            '脫水相關（Dehydration-related）': '增加飲水，避免高蛋白飲食。',
+                            '異味強烈（Strong Odor）': '可能細菌感染。尿培養檢查。'
+                        }
+                    },
+                    '尿液帶泡（Foamy Urine）': {
+                        description: '提示蛋白尿，可能系統性疾病如腎臟病。需血液及24小時尿液檢查評估腎功能。',
+                        subsymptoms: {
+                            '持續不散（Persistent）': '暗示大量蛋白尿。檢查糖尿病或高血壓。',
+                            '合併水腫（With Edema）': '腎病症候群。腎功能檢查。',
+                            '家族史（Familial）': '考慮遺傳性腎病。'
+                        }
+                    },
+                }
+            },
+            '疼痛相關（Pain-Related）': {
+                icon: '⚠️',
+                symptoms: {
+                    '腰痛/肋脊角痛（Flank Pain/Costovertebral Angle Tenderness）': {
+                        description: '常見於腎盂腎炎、腎結石。有時為急症，需快速判斷。',
+                        subsymptoms: {
+                            '劇痛突發（Severe Sudden Pain）': '強烈懷疑腎絞痛。立即掛急診。',
+                            '伴隨發燒（With Fever）': '排除腎盂腎炎。抗生素治療。',
+                            '反覆發作（Recurrent）': '檢查結石代謝異常。'
+                        }
+                    },
+                    '下腹痛/會陰痛（Suprapubic/Perineal Pain）': {
+                        description: '常見於膀胱炎、攝護腺炎。建議記錄疼痛日誌，尋求疼痛科/泌尿科協助。',
+                        subsymptoms: {
+                            '排尿時加劇（Worsens with Urination）': '可能膀胱炎。尿培養。',
+                            '慢性疼痛（Chronic）': '男性考慮慢性前列腺炎；女性排除間質性膀胱炎。',
+                            '局部腫脹（Localized Swelling）': '檢查感染或阻塞。'
+                        }
+                    },
+                    '睪丸痛/陰囊腫脹（Testicular Pain/Scrotal Swelling）': {
+                        description: '常見於副睪炎、睪丸扭轉。需快速判斷，可能為急症。',
+                        subsymptoms: {
+                            '突發劇痛（Sudden Severe Pain）': '懷疑睪丸扭轉。立即手術。',
+                            '伴隨發燒（With Fever）': '副睪炎。抗生素治療。',
+                            '腫脹明顯（Obvious Swelling）': '超音波檢查排除腫瘤。'
+                        }
+                    },
+                    '全身性發燒/寒顫（Systemic Fever/Chills）': {
+                        description: '全身性發燒（>38°C）或畏寒。在泌尿系統中，這高度暗示存在急性感染，如腎盂腎炎、急性前列腺炎或副睪炎。必須立即就醫。',
+                        subsymptoms: {
+                            '高燒持續（Sustained High Fever）': '立即急診檢查血常規及尿液，排除敗血症。',
+                            '伴隨畏寒/發抖（With Chills/Rigors）': '提示菌血症風險高，建議靜脈抗生素治療。',
+                            '無其他泌尿症狀（No Other Urinary Symptoms）': '需排除非泌尿系統感染，如流感或新冠肺炎。'
+                        }
+                    },
+                }
+            },
+            '生殖道與性健康（Genital & Sexual Health）': {
+                icon: '🦠', // 新的圖標，強調感染/生殖道
+                symptoms: {
+                    // *** 男性專屬症狀 ( FEMALE 會被過濾掉) ***
+                    '尿道分泌物（Urethral Discharge）': {
+                        description: '常見於性傳播感染（如淋病、衣原體等）或尿道炎，需進行尿道或分泌物培養檢查以確定病原體。請告知醫師是否有不安全性行為史。',
+                        isMaleOnly: true, // 標記為男性專屬
+                        subsymptoms: {
+                            '黃/綠色濃稠分泌物（Thick Yellow/Green Discharge）': '高度懷疑淋病性尿道炎（Gonococcal Urethritis）。需立即抗生素治療及追蹤。',
+                            '白色清澈稀薄分泌物（Clear Thin White Discharge）': '常見於非淋病性尿道炎（Non-Gonococcal Urethritis, NGU），如衣原體感染。',
+                            '伴隨發癢或灼熱（With Itching or Burning）': '可能為單純皰疹或其他病毒感染。',
+                            '僅清晨分泌物（Morning Discharge Only）': '常見於NGU。建議進行核酸檢測
+
                     返回上層 (←)
                 </button>
                 <button id="resetButton" class="w-full p-3 font-bold rounded-xl text-lg bg-red-600 hover:bg-red-700 transition duration-150">
