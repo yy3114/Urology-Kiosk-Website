@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>泌尿系統自動診斷機</title>
+    <!-- 載入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 使用 Inter 字體 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1e3a; /* 深藍色背景 */
+        }
+        .vending-machine {
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5), 
+                        0 0 0 10px #223355; /* 模擬機器的邊框 */
+            background-image: linear-gradient(145deg, #182846 0%, #101c30 100%); /* 深色漸變 */
+        }
+        .vending-display {
+            border: 5px solid #00c7e5; /* 藍綠色邊框 */
+            box-shadow: inset 0 0 10px #00c7e5, 0 0 15px #00c7e5; /* 發光效果 */
+        }
+        .item-button {
+            transition: transform 0.1s, box-shadow 0.1s;
+            background-image: linear-gradient(135deg, #2a3c5a 0%, #1f2d42 100%);
+            /* 【已修改】確保英文字不被切割，只在單詞間隔處換行 */
+            word-break: normal; 
+            overflow-wrap: break-word; 
+            hyphens: manual; 
+        }
+        .item-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        }
+        .item-button:active {
+            transform: translateY(0);
+        }
+        .selected {
+            border: 3px solid #facc15; /* 亮黃色邊框表示選中 */
+            box-shadow: 0 0 10px #facc15;
+            background-image: linear-gradient(135deg, #facc15 0%, #eab308 100%);
+            color: #1f2d42; /* 深藍色文字 */
+            /* 【已修改】確保英文字不被切割，只在單詞間隔處換行 */
+            word-break: normal;
+            overflow-wrap: break-word;
+            hyphens: manual;
+        }
+        .result-card-slot {
+            background-color: #1f2d42;
+            /* 增加邊框，讓出口槽更顯眼 */
+            border: 3px solid #ff0000; 
+            border-top: 5px solid #00c7e5;
+            position: relative;
+            overflow: hidden;
+        }
+        /* 模擬印表機出紙動畫，從頂部逐漸出現 */
+        @keyframes printOut {
+            0% {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        .print-animation {
+            animation: printOut 1.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="p-4 flex items-center justify-center min-h-screen">
+
+    <div id="vendingMachine" class="vending-machine w-full max-w-lg mx-auto rounded-xl overflow-hidden p-4 sm:p-6 text-white border-8 border-gray-900">
+        
+        <!-- 頂部標題和說明 -->
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-center mb-6 tracking-wider text-[#00c7e5]">
+            <span class="block">泌尿系統診斷機</span> 
+            <!-- 版本資訊 -->
+            <span class="text-base font-normal text-gray-400 block mt-1 text-center">URO Kiosk Unit-v1（2025.9.28 e43814)</span>
+        </h1>
+        
+        <!-- 顯示螢幕 (字體已加大: text-xl sm:text-2xl，高度已增加: h-28 sm:h-36) -->
+        <div id="display" class="vending-display p-4 h-28 sm:h-36 mb-6 rounded-lg text-xl sm:text-2xl font-mono text-[#00c7e5] flex flex-col justify-center items-center text-center bg-[#101c30]">
+            <!-- 初始文字已更新 -->
+            <p id="instructionText" class="animate-pulse">泌醫關心您。歡迎使用，請選擇您的主要不適類別...</p>
+            <!-- 次要提示字體也稍微加大到 text-base -->
+            <p id="selectionText" class="text-base text-gray-400 mt-1"></p>
+        </div>
+
+        <!-- 物品/選項選擇區域 -->
+        <div id="optionsGrid" class="grid grid-cols-2 gap-4 mb-6">
+            <!-- 選項將由 JS 動態生成 -->
+        </div>
+
+        <!-- 結果/控制面板 -->
+        <div class="p-4 rounded-lg bg-[#101c30] border border-gray-700">
+            <h2 class="text-xl font-bold text-center mb-3 text-gray-300">控制面板</h2>
+            <div class="flex justify-around space-x-4">
+                <button id="confirmButton" class="w-full p-3 font-bold rounded-xl text-lg bg-yellow-500 hover:bg-yellow-600 text-gray-900 transition duration-150 disabled:opacity-50" disabled>
+                    確認選擇 (✓)
+                </button>
+                <button id="backButton" class="w-full p-3 font-bold rounded-xl text-lg bg-blue-600 hover:bg-blue-700 transition duration-150 hidden">
+                    返回上層 (←)
+                </button>
+                <button id="resetButton" class="w-full p-3 font-bold rounded-xl text-lg bg-red-600 hover:bg-red-700 transition duration-150">
+                    重新開始 (⟲)
+                </button>
+            </div>
+        </div>
+
+        <!-- 診斷卡出口槽 (邊框已加粗加紅以強調位置) -->
+        <div class="result-card-slot mt-6 p-4 rounded-b-xl border-t-4 border-gray-700 min-h-24">
+            <p class="text-sm text-gray-500 mb-2">健康建議卡出口 (請在此領取):</p>
+            <!-- 確保初始狀態是 hidden -->
+            <div id="resultCard" class="hidden bg-gray-100 p-4 rounded-lg text-gray-900 shadow-xl"> 
+                <h3 class="text-xl font-bold text-blue-600 mb-2">診斷卡已發放</h3>
+                <p id="cardTitle" class="font-semibold text-lg"></p>
+                <!-- 確保使用 DIV 容器以容納複雜的 HTML 內容 -->
+                <div id="cardContent" class="text-sm mt-2"></div> 
+                <p class="text-xs text-red-600 mt-3 font-bold">※ 緊急免責聲明：本卡不具醫療診斷效力，請務必諮詢泌尿科醫師。</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 設定全域變數
+        const display = document.getElementById('display');
+        const instructionText = document.getElementById('instructionText');
+        const selectionText = document.getElementById('selectionText');
+        const optionsGrid = document.getElementById('optionsGrid');
+        const confirmButton = document.getElementById('confirmButton');
+        const backButton = document.getElementById('backButton');
+        const resetButton = document.getElementById('resetButton');
+        const resultCard = document.getElementById('resultCard');
+        const cardTitle = document.getElementById('cardTitle');
+        const cardContent = document.getElementById('cardContent');
+
+        // 模擬診斷機狀態
+        let gameState = 'CATEGORY'; // CATEGORY, SYMPTOM, SUBSYMPTOM, PROCESSING, RESULT
+        let selectedCategory = null;
+        let selectedSymptom = null;
+        let selectedSubsymptoms = [];
+
+        // 模擬數據庫：泌尿系統類別與症狀 (使用中文名詞（英文）格式，並使用標準醫學英文術語)
+        const data = {
+            '排尿異常（Urinary Dysfunction）': {
+                icon: '💧',
+                symptoms: {
+                    '頻尿/夜尿（Frequency/Nocturia）': {
+                        description: '常見於攝護腺肥大、膀胱過動症、神經性膀胱等。建議減少刺激性飲料及睡前飲水，並進行排尿訓練。',
+                        subsymptoms: {
+                            '日間頻尿（Daytime Frequency）': '可能與咖啡因或液體攝取過多相關。建議監測每日飲水量。',
+                            '夜間多尿（Nocturia）': '可能與心臟或腎臟問題相關。若超過2次/夜，需檢查血糖及心功能。',
+                            '伴隨急尿（With Urgency）': '暗示膀胱過動症。考慮抗膽鹼藥物治療。'
+                        }
+                    },
+                    // 新增的症狀：排尿疼痛（Dysuria）
+                    '排尿疼痛（Dysuria）': {
+                        description: '排尿時伴隨灼熱、刺痛或不適感。最常見於泌尿道感染（UTI）或膀胱炎，但結石或攝護腺炎亦可能引起。需進行尿液常規檢查。',
+                        subsymptoms: {
+                            '灼熱感（Burning Sensation）': '高度提示尿道或膀胱刺激，常見於膀胱炎。',
+                            '刺痛感（Stabbing Pain）': '可能與結石或尿道炎症相關。',
+                            '排尿後疼痛（Pain after Voiding）': '多與膀胱痙攣相關，見於間質性膀胱炎。',
+                            '尿道口疼痛（Meatal Pain）': '提示尿道炎或龜頭炎。'
+                        }
+                    },
+                    '尿急/急迫性尿失禁（Urgency/Urge Incontinence）': {
+                        description: '常見於膀胱過動症、神經性膀胱等。建議進行骨盆底肌訓練（凱格爾運動）。',
+                        subsymptoms: {
+                            '突然強烈尿意（Sudden Urge）': '可能與感染或神經問題相關。需尿培養檢查。',
+                            '漏尿發生（Leakage）': '區分急迫性失禁。考慮藥物治療。',
+                            '頻繁發作（Frequent Episodes）': '記錄日誌，尋求泌尿科協助。'
+                        }
+                    },
+                    '排尿困難（Voiding Difficulty）': {
+                        description: '表現為解尿費力、尿流變細、遲緩、斷續、餘尿感。常見於攝護腺肥大、尿道狹窄。需流量檢查。',
+                        subsymptoms: {
+                            '起始延遲（Hesitancy）': '常見於前列腺肥大。建議alpha阻斷劑。',
+                            '尿流中斷（Intermittency）': '可能尿道狹窄。需影像學檢查。',
+                            '餘尿感（Post-void Dribbling）': '暗示膀胱頸問題。進行殘尿量測量。'
+                        }
+                    },
+                }
+            },
+            '尿液異常（Urine Abnormalities）': {
+                icon: '🩸',
+                symptoms: {
+                    '血尿（Hematuria）': {
+                        description: '包括顯微血尿、肉眼血尿。需警覺感染、結石、腫瘤。尤其年長者，需立即排除惡性腫瘤。',
+                        subsymptoms: {
+                            '肉眼血尿（Gross Hematuria）': '無論是否疼痛，都是嚴重徵兆。請在24小時內看泌尿科。',
+                            '顯微血尿（Microscopic Hematuria）': '通常健康檢查發現。若合併蛋白尿，需檢查腎臟病變。',
+                            '間歇性（Intermittent）': '檢查凝血功能或影像學。'
+                        }
+                    },
+                    '膿尿/尿液混濁或異味（Pyuria/Cloudy or Odorous Urine）': {
+                        description: '多數與感染或脫水有關。若伴隨發燒，應儘快進行尿液分析及細菌培養。',
+                        subsymptoms: {
+                            '伴隨發燒（With Fever）': '高度懷疑UTI。立即抗生素治療。',
+                            '脫水相關（Dehydration-related）': '增加飲水，避免高蛋白飲食。',
+                            '異味強烈（Strong Odor）': '可能細菌感染。尿培養檢查。'
+                        }
+                    },
+                    '尿液帶泡（Foamy Urine）': {
+                        description: '提示蛋白尿，可能系統性疾病如腎臟病。需血液及24小時尿液檢查評估腎功能。',
+                        subsymptoms: {
+                            '持續不散（Persistent）': '暗示大量蛋白尿。檢查糖尿病或高血壓。',
+                            '合併水腫（With Edema）': '腎病症候群。腎功能檢查。',
+                            '家族史（Familial）': '考慮遺傳性腎病。'
+                        }
+                    },
+                }
+            },
+            '疼痛相關（Pain-Related）': {
+                icon: '⚠️',
+                symptoms: {
+                    '腰痛/肋脊角痛（Flank Pain/Costovertebral Angle Tenderness）': {
+                        description: '常見於腎盂腎炎、腎結石。有時為急症，需快速判斷。',
+                        subsymptoms: {
+                            '劇痛突發（Severe Sudden Pain）': '強烈懷疑腎絞痛。立即掛急診。',
+                            '伴隨發燒（With Fever）': '排除腎盂腎炎。抗生素治療。',
+                            '反覆發作（Recurrent）': '檢查結石代謝異常。'
+                        }
+                    },
+                    '下腹痛/會陰痛（Suprapubic/Perineal Pain）': {
+                        description: '常見於膀胱炎、攝護腺炎。建議記錄疼痛日誌，尋求疼痛科/泌尿科協助。',
+                        subsymptoms: {
+                            '排尿時加劇（Worsens with Urination）': '可能膀胱炎。尿培養。',
+                            '慢性疼痛（Chronic）': '男性考慮慢性前列腺炎；女性排除間質性膀胱炎。',
+                            '局部腫脹（Localized Swelling）': '檢查感染或阻塞。'
+                        }
+                    },
+                    '睪丸痛/陰囊腫脹（Testicular Pain/Scrotal Swelling）': {
+                        description: '常見於副睪炎、睪丸扭轉。需快速判斷，可能為急症。',
+                        subsymptoms: {
+                            '突發劇痛（Sudden Severe Pain）': '懷疑睪丸扭轉。立即手術。',
+                            '伴隨發燒（With Fever）': '副睪炎。抗生素治療。',
+                            '腫脹明顯（Obvious Swelling）': '超音波檢查排除腫瘤。'
+                        }
+                    },
+                }
+            },
+            // 重新定義此類別以包含尿道分泌物和性病篩查
+            '生殖道與性健康（Genital & Sexual Health）': {
+                icon: '🦠', // 新的圖標，強調感染/生殖道
+                symptoms: {
+                    // 新增的症狀：尿道分泌物 (urethral discharge)
+                    '尿道分泌物（Urethral Discharge）': {
+                        description: '常見於性傳播感染（如淋病、衣原體等）或尿道炎，需進行尿道或分泌物培養檢查以確定病原體。請告知醫師是否有不安全性行為史。',
+                        subsymptoms: {
+                            '黃/綠色濃稠分泌物（Thick Yellow/Green Discharge）': '高度懷疑淋病性尿道炎（Gonococcal Urethritis）。需立即抗生素治療及追蹤。',
+                            '白色清澈稀薄分泌物（Clear Thin White Discharge）': '常見於非淋病性尿道炎（Non-Gonococcal Urethritis, NGU），如衣原體感染。',
+                            '伴隨發癢或灼熱（With Itching or Burning）': '可能為單純皰疹或其他病毒感染。',
+                            '僅清晨分泌物（Morning Discharge Only）': '常見於NGU。建議進行核酸檢測（NAAT）。',
+                        }
+                    },
+                    '勃起功能障礙/早洩（Erectile Dysfunction/Premature Ejaculation）': {
+                        description: '涉及泌尿與生殖功能，影響生活品質。可能與攝護腺問題或血管疾病相關。',
+                        subsymptoms: {
+                            '持續性障礙（Persistent ED）': '檢查心血管風險。考慮PDE5抑制劑。',
+                            '心理因素（Psychogenic）': '壓力相關。心理諮詢。',
+                            '伴隨其他症狀（With Other Symptoms）': '如糖尿病。綜合評估。'
+                        }
+                    },
+                    '血精症（Hemospermia）': {
+                        description: '血精症。需排除感染、腫瘤或外傷。影響生育。',
+                        subsymptoms: {
+                            '單次發生（Single Episode）': '通常良性。觀察。',
+                            '反覆（Recurrent）': '前列腺檢查或超音波。',
+                            '伴隨疼痛（With Pain）': '可能感染。抗生素。'
+                        }
+                    },
+                    '男性不孕症（Male Infertility）': {
+                        description: '少精症、無精症伴隨泌尿系異常。影響生育，需精液分析。',
+                        subsymptoms: {
+                            '少精症（Oligospermia）': '檢查荷爾蒙或遺傳。',
+                            '無精症（Azoospermia）': '排除阻塞或睪丸問題。手術評估。',
+                            '伴隨泌尿症狀（With Urological Symptoms）': '如攝護腺肥大。綜合治療。'
+                        }
+                    },
+                }
+            }
+        };
+
+        /**
+         * 更新顯示螢幕上的文字和狀態
+         * @param {string} instruction 
+         * @param {string} selection 
+         */
+        function updateDisplay(instruction, selection = '') {
+            instructionText.textContent = instruction;
+            selectionText.textContent = selection;
+        }
+
+        /**
+         * 渲染可選的按鈕列表（類別、症狀或子症狀）
+         * @param {object} optionsMap - 包含 key (名稱) 和 value (圖標/內容) 的物件
+         * @param {string} type - 'category', 'symptom', or 'subsymptom'
+         */
+        function renderOptions(optionsMap, type) {
+            optionsGrid.innerHTML = '';
+            
+            const keys = Object.keys(optionsMap);
+            // 調整網格佈局，如果選項超過 2 個，則使用 2 欄
+            optionsGrid.className = `grid grid-cols-${keys.length > 2 ? '2' : '1'} sm:grid-cols-2 gap-4 mb-6`;
+            
+            keys.forEach(key => {
+                const option = type === 'category' ? optionsMap[key] : (type === 'symptom' ? { icon: '' } : '');
+                const button = document.createElement('button');
+                button.textContent = type === 'category' ? `${option.icon} ${key}` : key;
+                button.dataset.value = key;
+                
+                button.classList.add(
+                    'item-button', 
+                    'p-4', 
+                    'rounded-xl', 
+                    'text-base', 
+                    'sm:text-lg', 
+                    'font-bold', 
+                    'text-gray-200',
+                    'shadow-lg',
+                    'border-2',
+                    'border-gray-700',
+                    'break-words' // Tailwind class 確保文字換行
+                );
+                
+                if (type === 'subsymptom' && selectedSubsymptoms.includes(key)) {
+                    button.classList.add('selected', 'text-gray-900');
+                    button.classList.remove('item-button', 'text-gray-200');
+                } else if (type === 'symptom' && selectedSymptom === key) {
+                    button.classList.add('selected', 'text-gray-900');
+                    button.classList.remove('item-button', 'text-gray-200');
+                }
+
+                button.addEventListener('click', () => {
+                    if (type === 'category') handleCategorySelect(key);
+                    else if (type === 'symptom') handleSymptomSelect(key);
+                    else if (type === 'subsymptom') handleSubsymptomToggle(key, button);
+                });
+                optionsGrid.appendChild(button);
+            });
+        }
+
+        /**
+         * 處理類別選擇
+         * @param {string} categoryName 
+         */
+        function handleCategorySelect(categoryName) {
+            selectedCategory = categoryName;
+            selectedSymptom = null; // 確保重置
+            selectedSubsymptoms = []; // 確保重置
+            gameState = 'SYMPTOM';
+            const symptoms = data[categoryName].symptoms;
+            renderOptions(symptoms, 'symptom');
+            updateDisplay(`請選擇您的具體症狀:`, `[類別]: ${categoryName}`);
+            confirmButton.disabled = true;
+            backButton.classList.remove('hidden');
+            resultCard.classList.add('hidden');
+            resultCard.style.display = 'none';
+            resultCard.classList.remove('print-animation');
+        }
+
+        /**
+         * 處理症狀選擇 (單選)
+         * @param {string} symptomName 
+         */
+        function handleSymptomSelect(symptomName) {
+            selectedSymptom = symptomName;
+            selectedSubsymptoms = []; // 重置子症狀
+            gameState = 'SUBSYMPTOM';
+            // 由於症狀列表可能新增了元素，此處需要確保選中後再渲染子症狀
+            const subsymptoms = data[selectedCategory].symptoms[symptomName].subsymptoms;
+            renderOptions(subsymptoms, 'subsymptom');
+            updateDisplay(`請選擇相關的子症狀 (可多選):`, `[症狀]: ${symptomName}`);
+            // 子症狀階段，一開始沒有選擇，所以按鈕禁用
+            confirmButton.disabled = true; 
+        }
+
+        /**
+         * 處理子症狀的選擇與取消 (多選)
+         * @param {string} subsymptomName 
+         * @param {HTMLElement} button 
+         */
+        function handleSubsymptomToggle(subsymptomName, button) {
+            const index = selectedSubsymptoms.indexOf(subsymptomName);
+
+            if (index > -1) {
+                selectedSubsymptoms.splice(index, 1);
+                button.classList.remove('selected', 'text-gray-900');
+                button.classList.add('item-button', 'text-gray-200');
+            } else {
+                selectedSubsymptoms.push(subsymptomName);
+                button.classList.add('selected', 'text-gray-900');
+                button.classList.remove('item-button', 'text-gray-200');
+            }
+
+            selectionText.textContent = `[已選子項目]: ${selectedSubsymptoms.join('、') || '無'}`;
+            // 只要有選擇一個子症狀，就啟用確認按鈕
+            confirmButton.disabled = selectedSubsymptoms.length === 0;
+        }
+
+        /**
+         * 處理確認按鈕點擊 (進行模擬診斷)
+         */
+        confirmButton.addEventListener('click', () => {
+            if (gameState !== 'SUBSYMPTOM' || selectedSubsymptoms.length === 0) return;
+
+            gameState = 'PROCESSING';
+            confirmButton.disabled = true;
+            optionsGrid.innerHTML = '';
+            
+            updateDisplay('████ 掃描與處理中... ████', '系統正在匹配最相關的健康資訊，請稍候...');
+
+            resultCard.classList.add('hidden');
+            resultCard.style.display = 'none';
+            resultCard.classList.remove('print-animation');
+
+            setTimeout(() => {
+                simulateDiagnosis();
+            }, 3000);
+        });
+
+        /**
+         * 模擬診斷並顯示結果卡
+         */
+        function simulateDiagnosis() {
+            try {
+                gameState = 'RESULT';
+                
+                if (!selectedCategory || !selectedSymptom || !data[selectedCategory].symptoms[selectedSymptom] || selectedSubsymptoms.length === 0) {
+                    throw new Error("診斷數據不足或無效。請重新開始。");
+                }
+
+                const symptomData = data[selectedCategory].symptoms[selectedSymptom];
+                const subsymptomsMap = symptomData.subsymptoms;
+                
+                let combinedAdvice = `<ul>`;
+                combinedAdvice += selectedSubsymptoms.map(sub => {
+                    const advice = subsymptomsMap[sub] || '此子症狀無特定模擬建議。';
+                    return `<li class="mb-2"><span class="font-extrabold text-blue-900">${sub}</span>: ${advice}</li>`;
+                }).join('');
+                combinedAdvice += `</ul>`;
+                
+                const diagnosisTitle = `診斷代碼: URO-${Math.floor(Math.random() * 900) + 100} - 初步專業建議`;
+                let diagnosisContent = `<p class="font-medium mb-1">您選擇的症狀集中在：<span class="text-red-700">${selectedCategory} - ${selectedSymptom}</span>。</p>`;
+                
+                diagnosisContent += `<span class="font-bold text-red-700 block mt-3">【首要建議與鑑別】</span><p class="font-medium mt-1">${symptomData.description}</p>`;
+                diagnosisContent += `<span class="font-bold text-red-700 block mt-3">【細節症狀與建議】</span><div class="mt-1 text-sm space-y-1">${combinedAdvice}</div>`;
+                
+                cardTitle.textContent = diagnosisTitle;
+                cardContent.innerHTML = diagnosisContent;
+                
+                resultCard.classList.remove('hidden');
+                resultCard.style.display = 'block';
+                resultCard.classList.add('print-animation');
+
+                updateDisplay(`建議卡已出爐! 請取走`, `請詳閱建議並儘速就醫。`);
+                
+                console.log("診斷完成，結果卡已嘗試顯示。");
+                backButton.classList.add('hidden');
+
+            } catch (error) {
+                console.error("模擬診斷出錯:", error);
+                cardTitle.textContent = "系統錯誤 (Error)";
+                cardContent.innerHTML = `<p class="text-red-500 font-bold">無法完成診斷。請點擊「重新開始」按鈕。</p><p class="mt-2 text-xs">技術訊息: ${error.message}</p>`;
+                resultCard.classList.remove('hidden');
+                resultCard.style.display = 'block';
+                resultCard.classList.add('print-animation');
+
+                updateDisplay(`診斷失敗，請重新嘗試`, `發生錯誤，請查看出口卡訊息。`);
+            } finally {
+                confirmButton.disabled = true;
+            }
+        }
+
+        /**
+         * 處理返回按鈕點擊
+         */
+        backButton.addEventListener('click', () => {
+            if (gameState === 'SUBSYMPTOM') {
+                // 從子症狀返回症狀選擇
+                gameState = 'SYMPTOM';
+                const symptoms = data[selectedCategory].symptoms;
+                renderOptions(symptoms, 'symptom');
+                updateDisplay(`請選擇您的具體症狀:`, `[類別]: ${selectedCategory}`);
+                confirmButton.disabled = true;
+                selectedSubsymptoms = [];
+            } else if (gameState === 'SYMPTOM') {
+                // 從症狀返回類別選擇 (等同於Reset)
+                resetButton.click();
+            }
+        });
+
+        /**
+         * 處理重新開始按鈕點擊
+         */
+        resetButton.addEventListener('click', () => {
+            gameState = 'CATEGORY';
+            selectedCategory = null;
+            selectedSymptom = null;
+            selectedSubsymptoms = [];
+            
+            const categories = {};
+            for (const key in data) {
+                categories[key] = { icon: data[key].icon };
+            }
+            renderOptions(categories, 'category');
+            
+            // 初始文字已更新
+            updateDisplay('泌醫關心您。歡迎使用，請選擇您的主要不適類別...');
+            
+            confirmButton.disabled = true;
+            backButton.classList.add('hidden');
+            resultCard.classList.add('hidden');
+            resultCard.style.display = 'none';
+            resultCard.classList.remove('print-animation');
+        });
+
+        // 頁面載入時初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            resetButton.click(); 
+        });
+
+    </script>
+</body>
+</html>
+
