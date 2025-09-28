@@ -7,7 +7,7 @@
     <!-- 載入 Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 載入 Tone.js CDN for Sound Effects -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <style>
         /* 使用 Inter 字體 */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
@@ -57,6 +57,7 @@
             border-radius: 0 0 0.75rem 0.75rem; /* 僅底部圓角 */
             position: relative;
             min-height: 6rem; /* 保持最小高度 */
+            overflow: hidden; /* 啟用裁剪，讓卡片在上方隱藏 */
         }
 
         /* 模擬紅粗線的樣式 (用來取代邊框) */
@@ -69,19 +70,20 @@
             transition: box-shadow 0.3s;
         }
         
-        /* 模擬印表機出紙動畫，從頂部逐漸出現 (持續 1.5s) */
+        /* 模擬印表機出紙動畫，從上方逐漸出現 (持續 1.5s) */
         @keyframes printOut {
             0% {
-                transform: translateY(-100%);
-                opacity: 0;
+                transform: translateY(-100%); /* <-- NEW: 從上方隱藏處開始 */
+                opacity: 0.2;
             }
             100% {
-                transform: translateY(0);
+                transform: translateY(0); /* 向下移動到正常位置 */
                 opacity: 1;
             }
         }
         .print-animation {
             animation: printOut 1.5s ease-out forwards;
+            position: relative; 
         }
 
         /* 紅色霓虹閃爍動畫 */
@@ -103,6 +105,710 @@
 <body class="p-4 flex items-center justify-center min-h-screen">
 
     <div id="vendingMachine" class="vending-machine w-full max-w-lg mx-auto rounded-xl overflow-hidden p-4 sm:p-6 text-white border-8 border-gray-900">
+        
+        <!-- 頂部標題和說明 -->
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-center mb-6 tracking-wider text-[#00c7e5]">
+            <span class="block">泌尿系統診斷機</span> 
+            <!-- 版本資訊 -->
+            <span class="text-base font-normal text-gray-400 block mt-1 text-center">URO Kiosk Unit-v1（2025.9.28 e43814)</span>
+        </h1>
+        
+        <!-- 顯示螢幕 (字體已加大: text-xl sm:text-2xl，高度已增加: h-28 sm:h-36) -->
+        <div id="display" class="vending-display p-4 h-28 sm:h-36 mb-6 rounded-lg text-xl sm:text-2xl font-mono text-[#00c7e5] flex flex-col justify-center items-center text-center bg-[#101c30]">
+            <!-- 初始文字已更新 -->
+            <p id="instructionText" class="animate-pulse">泌醫關心您。歡迎使用，請選擇您的性別...</p>
+            <!-- 次要提示字體也稍微加大到 text-base -->
+            <p id="selectionText" class="text-base text-gray-400 mt-1"></p>
+        </div>
+
+        <!-- 物品/選項選擇區域 -->
+        <div id="optionsGrid" class="grid grid-cols-2 gap-4 mb-6">
+            <!-- 選項將由 JS 動態生成 -->
+        </div>
+
+        <!-- 結果/控制面板 -->
+        <!-- 移除 mb-6，讓其與紅線更靠近 -->
+        <div class="p-4 rounded-lg bg-[#101c30] border border-gray-700">
+            <h2 class="text-xl font-bold text-center mb-3 text-gray-300">控制面板</h2>
+            <div class="flex justify-around space-x-4">
+                <button id="confirmButton" class="w-full p-3 font-bold rounded-xl text-lg bg-yellow-500 hover:bg-yellow-600 text-gray-900 transition duration-150 disabled:opacity-50" disabled>
+                    確認選擇 (✓)
+                </button>
+                <button id="backButton" class="w-full p-3 font-bold rounded-xl text-lg bg-blue-600 hover:bg-blue-700 transition duration-150 hidden">
+                    返回上層 (←)
+                </button>
+                <button id="resetButton" class="w-full p-3 font-bold rounded-xl text-lg bg-red-600 hover:bg-red-700 transition duration-150">
+                    重新開始 (⟲)
+                </button>
+            </div>
+        </div>
+
+        <!-- 診斷卡出口槽：根據用戶要求，將上緣邊框替換為獨立的紅粗線 DIV -->
+        <div class="mt-4">
+            <!-- 紅粗線：用於分隔控制面板和出口槽，並進行霓虹閃爍 -->
+            <div id="redDivider" class="red-divider"></div>
+
+            <!-- 出口槽容器：移除所有邊框和頂部邊緣樣式，僅保留背景和底部圓角 -->
+            <div id="resultCardSlot" class="result-card-slot">
+                <p class="text-sm text-gray-500 mb-2">健康建議卡出口 (請在此領取):</p>
+                <!-- 確保初始狀態是 hidden -->
+                <div id="resultCard" class="hidden bg-gray-100 p-4 rounded-lg text-gray-900 shadow-xl"> 
+                    <h3 class="text-xl font-bold text-blue-600 mb-2">診斷卡已發放</h3>
+                    <p id="cardTitle" class="font-semibold text-lg"></p>
+                    <!-- 確保使用 DIV 容器以容納複雜的 HTML 內容 -->
+                    <div id="cardContent" class="text-sm mt-2"></div> 
+                    <p class="text-xs text-red-600 mt-3 font-bold">※ 緊急免責聲明：本卡不具醫療診斷效力，請務必諮詢泌尿科醫師。</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 設定全域變數
+        const display = document.getElementById('display');
+        const instructionText = document.getElementById('instructionText');
+        const selectionText = document.getElementById('selectionText');
+        const optionsGrid = document.getElementById('optionsGrid');
+        const confirmButton = document.getElementById('confirmButton');
+        const backButton = document.getElementById('backButton');
+        const resetButton = document.getElementById('resetButton');
+        const redDivider = document.getElementById('redDivider'); // 新增紅線元素
+        const resultCardSlot = document.getElementById('resultCardSlot'); 
+        const resultCard = document.getElementById('resultCard');
+        const cardTitle = document.getElementById('cardTitle');
+        const cardContent = document.getElementById('cardContent');
+
+        // 模擬診斷機狀態
+        let gameState = 'GENDER'; // 新增 GENDER 階段
+        let selectedGender = null;
+        let selectedCategory = null; // CATEGORY, SYMPTOM, SUBSYMPTOM, PROCESSING, RESULT
+        let selectedSymptom = null;
+        let selectedSubsymptoms = [];
+        let neonTimeout = null; // 用於儲存霓虹閃爍定時器
+
+        // Tone.js Synth 初始化
+        let synth = null; 
+
+        // 音效生成邏輯：兩聲較短、較輕的提示音
+        function playPrintSound() {
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    _generateSound();
+                }).catch(err => {
+                    console.error("Failed to start Tone.js AudioContext:", err);
+                });
+            } else {
+                _generateSound();
+            }
+        }
+
+        function _generateSound() {
+            // 使用 PolySynth 模擬電子嗶聲
+            if (!synth) {
+                synth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: "square" }, // 方波產生更清晰的電子音
+                    envelope: {
+                        attack: 0.01,
+                        decay: 0.1,
+                        sustain: 0.0,
+                        release: 0.3
+                    }
+                }).toDestination();
+            }
+            
+            const volume = 0.5; // 減弱音量至 50%
+            const now = Tone.now();
+            const duration = "8n"; // 八分音符，較短
+
+            // 第一聲：低音 C4
+            synth.triggerAttackRelease("C4", duration, now, volume); 
+            // 第二聲：高音 D4，間隔 0.2 秒
+            synth.triggerAttackRelease("D4", duration, now + 0.2, volume); 
+        }
+
+        // 模擬數據庫：泌尿系統類別與症狀
+        const data = {
+            '排尿異常（Urinary Dysfunction）': {
+                icon: '💧',
+                symptoms: {
+                    '頻尿/夜尿（Frequency/Nocturia）': {
+                        description: '常見於攝護腺肥大、膀胱過動症、神經性膀胱等。建議減少刺激性飲料及睡前飲水，並進行排尿訓練。',
+                        subsymptoms: {
+                            '日間頻尿（Daytime Frequency）': '可能與咖啡因或液體攝取過多相關。建議監測每日飲水量。',
+                            '夜間多尿（Nocturia）': '可能與心臟或腎臟問題相關。若超過2次/夜，需檢查血糖及心功能。',
+                            '伴隨急尿（With Urgency）': '暗示膀胱過動症。考慮抗膽鹼藥物治療。'
+                        }
+                    },
+                    '排尿疼痛（Dysuria）': {
+                        description: '排尿時伴隨灼熱、刺痛或不適感。最常見於泌尿道感染（UTI）或膀胱炎，但結石或攝護腺炎亦可能引起。需進行尿液常規檢查。',
+                        subsymptoms: {
+                            '灼熱感（Burning Sensation）': '高度提示尿道或膀胱刺激，常見於膀胱炎。',
+                            '刺痛感（Stabbing Pain）': '可能與結石或尿道炎症相關。',
+                            '排尿後疼痛（Pain after Voiding）': '多與膀胱痙攣相關，見於間質性膀胱炎。',
+                            '尿道口疼痛（Meatal Pain）': '提示尿道炎或龜頭炎。'
+                        }
+                    },
+                    '尿急/急迫性尿失禁（Urgency/Urge Incontinence）': {
+                        description: '常見於膀胱過動症、神經性膀胱等。建議進行骨盆底肌訓練（凱格爾運動）。',
+                        subsymptoms: {
+                            '突然強烈尿意（Sudden Urge）': '可能與感染或神經問題相關。需尿培養檢查。',
+                            '漏尿發生（Leakage）': '區分急迫性失禁。考慮藥物治療。',
+                            '頻繁發作（Frequent Episodes）': '記錄日誌，尋求泌尿科協助。'
+                        }
+                    },
+                    '排尿困難（Voiding Difficulty）': {
+                        description: '表現為解尿費力、尿流變細、遲緩、斷續、餘尿感。常見於攝護腺肥大、尿道狹窄。需流量檢查。',
+                        subsymptoms: {
+                            '起始延遲（Hesitancy）': '常見於前列腺肥大。建議alpha阻斷劑。',
+                            '尿流中斷（Intermittency）': '可能尿道狹窄。需影像學檢查。',
+                            '餘尿感（Post-void Dribbling）': '暗示膀胱頸問題。進行殘尿量測量。'
+                        }
+                    },
+                }
+            },
+            '尿液異常（Urine Abnormalities）': {
+                icon: '🩸',
+                symptoms: {
+                    '血尿（Hematuria）': {
+                        description: '包括顯微血尿、肉眼血尿。需警覺感染、結石、腫瘤。尤其年長者，需立即排除惡性腫瘤。',
+                        subsymptoms: {
+                            '肉眼血尿（Gross Hematuria）': '無論是否疼痛，都是嚴重徵兆。請在24小時內看泌尿科。',
+                            '顯微血尿（Microscopic Hematuria）': '通常健康檢查發現。若合併蛋白尿，需檢查腎臟病變。',
+                            '間歇性（Intermittent）': '檢查凝血功能或影像學。'
+                        }
+                    },
+                    '膿尿/尿液混濁或異味（Pyuria/Cloudy or Odorous Urine）': {
+                        description: '多數與感染或脫水有關。若伴隨發燒，應儘快進行尿液分析及細菌培養。',
+                        subsymptoms: {
+                            '伴隨發燒（With Fever）': '高度懷疑UTI。立即抗生素治療。',
+                            '脫水相關（Dehydration-related）': '增加飲水，避免高蛋白飲食。',
+                            '異味強烈（Strong Odor）': '可能細菌感染。尿培養檢查。'
+                        }
+                    },
+                    '尿液帶泡（Foamy Urine）': {
+                        description: '提示蛋白尿，可能系統性疾病如腎臟病。需血液及24小時尿液檢查評估腎功能。',
+                        subsymptoms: {
+                            '持續不散（Persistent）': '暗示大量蛋白尿。檢查糖尿病或高血壓。',
+                            '合併水腫（With Edema）': '腎病症候群。腎功能檢查。',
+                            '家族史（Familial）': '考慮遺傳性腎病。'
+                        }
+                    },
+                }
+            },
+            '疼痛相關（Pain-Related）': {
+                icon: '⚠️',
+                symptoms: {
+                    '腰痛/肋脊角痛（Flank Pain/Costovertebral Angle Tenderness）': {
+                        description: '常見於腎盂腎炎、腎結石。有時為急症，需快速判斷。',
+                        subsymptoms: {
+                            '劇痛突發（Severe Sudden Pain）': '強烈懷疑腎絞痛。立即掛急診。',
+                            '伴隨發燒（With Fever）': '排除腎盂腎炎。抗生素治療。',
+                            '反覆發作（Recurrent）': '檢查結石代謝異常。'
+                        }
+                    },
+                    '下腹痛/會陰痛（Suprapubic/Perineal Pain）': {
+                        description: '常見於膀胱炎、攝護腺炎。建議記錄疼痛日誌，尋求疼痛科/泌尿科協助。',
+                        subsymptoms: {
+                            '排尿時加劇（Worsens with Urination）': '可能膀胱炎。尿培養。',
+                            '慢性疼痛（Chronic）': '男性考慮慢性前列腺炎；女性排除間質性膀胱炎。',
+                            '局部腫脹（Localized Swelling）': '檢查感染或阻塞。'
+                        }
+                    },
+                    '睪丸痛/陰囊腫脹（Testicular Pain/Scrotal Swelling）': {
+                        description: '常見於副睪炎、睪丸扭轉。需快速判斷，可能為急症。',
+                        subsymptoms: {
+                            '突發劇痛（Sudden Severe Pain）': '懷疑睪丸扭轉。立即手術。',
+                            '伴隨發燒（With Fever）': '副睪炎。抗生素治療。',
+                            '腫脹明顯（Obvious Swelling）': '超音波檢查排除腫瘤。'
+                        }
+                    },
+                    '全身性發燒/寒顫（Systemic Fever/Chills）': {
+                        description: '全身性發燒（>38°C）或畏寒。在泌尿系統中，這高度暗示存在急性感染，如腎盂腎炎、急性前列腺炎或副睪炎。必須立即就醫。',
+                        subsymptoms: {
+                            '高燒持續（Sustained High Fever）': '立即急診檢查血常規及尿液，排除敗血症。',
+                            '伴隨畏寒/發抖（With Chills/Rigors）': '提示菌血症風險高，建議靜脈抗生素治療。',
+                            '無其他泌尿症狀（No Other Urinary Symptoms）': '需排除非泌尿系統感染，如流感或新冠肺炎。'
+                        }
+                    },
+                }
+            },
+            '生殖道與性健康（Genital & Sexual Health）': {
+                icon: '🦠', // 新的圖標，強調感染/生殖道
+                symptoms: {
+                    // *** 男性專屬症狀 ( FEMALE 會被過濾掉) ***
+                    '尿道分泌物（Urethral Discharge）': {
+                        description: '常見於性傳播感染（如淋病、衣原體等）或尿道炎，需進行尿道或分泌物培養檢查以確定病原體。請告知醫師是否有不安全性行為史。',
+                        isMaleOnly: true, // 標記為男性專屬
+                        subsymptoms: {
+                            '黃/綠色濃稠分泌物（Thick Yellow/Green Discharge）': '高度懷疑淋病性尿道炎（Gonococcal Urethritis）。需立即抗生素治療及追蹤。',
+                            '白色清澈稀薄分泌物（Clear Thin White Discharge）': '常見於非淋病性尿道炎（Non-Gonococcal Urethritis, NGU），如衣原體感染。',
+                            '伴隨發癢或灼熱（With Itching or Burning）': '可能為單純皰疹或其他病毒感染。',
+                            '僅清晨分泌物（Morning Discharge Only）': '常見於NGU。建議進行核酸檢測（NAAT）。',
+                        }
+                    },
+                    '勃起功能障礙/早洩（Erectile Dysfunction/Premature Ejaculation）': {
+                        description: '涉及泌尿與生殖功能，影響生活品質。可能與攝護腺問題或血管疾病相關。',
+                        isMaleOnly: true, // 標記為男性專屬
+                        subsymptoms: {
+                            '持續性障礙（Persistent ED）': '檢查心血管風險。考慮PDE5抑制劑。',
+                            '心理因素（Psychogenic）': '壓力相關。心理諮詢。',
+                            '伴隨其他症狀（With Other Symptoms）': '如糖尿病。綜合評估。'
+                        }
+                    },
+                    '血精症（Hemospermia）': {
+                        description: '血精症。需排除感染、腫瘤或外傷。影響生育。',
+                        isMaleOnly: true, // 標記為男性專屬
+                        subsymptoms: {
+                            '單次發生（Single Episode）': '通常良性。觀察。',
+                            '反覆（Recurrent）': '前列腺檢查或超音波。',
+                            '伴隨疼痛（With Pain）': '可能感染。抗生素。'
+                        }
+                    },
+                    '男性不孕症（Male Infertility）': {
+                        description: '少精症、無精症伴隨泌尿系異常。影響生育，需精液分析。',
+                        isMaleOnly: true, // 標記為男性專屬
+                        subsymptoms: {
+                            '少精症（Oligospermia）': '檢查荷爾蒙或遺傳。',
+                            '無精症（Azoospermia）': '排除阻塞或睪丸問題。手術評估。',
+                            '伴隨泌尿症狀（With Urological Symptoms）': '如攝護腺肥大。綜合治療。'
+                        }
+                    },
+                    // *** 女性專屬症狀 ( MALE 會被過濾掉) ***
+                    '陰道分泌物異常（Abnormal Vaginal Discharge）': {
+                        description: '包括顏色、氣味、量的變化，常與陰道炎（細菌、黴菌）、子宮頸炎或骨盆腔感染相關。泌尿科主要鑑別是否為泌尿道感染併發。',
+                        isFemaleOnly: true, // 標記為女性專屬
+                        subsymptoms: {
+                            '豆腐渣樣分泌物（Curd-like Discharge）': '高度提示黴菌感染（念珠菌）。局部抗黴菌藥膏。',
+                            '魚腥味（Fishy Odor）': '提示細菌性陰道病。口服或局部抗生素。',
+                            '黃色或綠色分泌物（Yellow or Green Discharge）': '需排除滴蟲或淋病感染。建議婦科或性病檢查。',
+                            '合併腹痛（With Abdominal Pain）': '需排除骨盆腔發炎（PID）。立即就醫。'
+                        }
+                    },
+                    '外陰/陰道疼痛或發癢（Vulvar/Vaginal Pain or Itching）': {
+                        description: '常見於黴菌感染、接觸性皮膚炎、外陰炎或巴氏腺囊腫。若合併排尿痛，可能為泌尿道感染（UTI）連帶刺激。',
+                        isFemaleOnly: true, // 標記為女性專屬
+                        subsymptoms: {
+                            '發癢劇烈（Severe Itching）': '提示黴菌感染或濕疹。',
+                            '灼熱感（Burning Sensation）': '可能接觸性過敏或細菌感染。',
+                            '局部腫塊（Localized Lump）': '檢查是否為巴氏腺膿瘍或囊腫。',
+                            '乾燥與萎縮（Dryness and Atrophy）': '與更年期荷爾蒙相關，考慮局部雌激素。'
+                        }
+                    },
+                    '性交疼痛（Dyspareunia）': {
+                        description: '性行為時感到疼痛。分為淺層（陰道口）與深層（子宮頸）。可能與UTI、陰道炎、子宮內膜異位、或間質性膀胱炎相關。',
+                        isFemaleOnly: true, // 標記為女性專屬
+                        subsymptoms: {
+                            '淺層疼痛（Superficial Pain）': '可能陰道痙攣或外陰炎。局部止痛與物理治療。',
+                            '深層疼痛（Deep Pain）': '需排除子宮內膜異位或骨盆腔沾黏。建議婦科超音波。',
+                            '排尿後疼痛（Pain after Intercourse）': '可能為性行為引起的泌尿道刺激。多飲水。'
+                        }
+                    },
+                    '慢性骨盆腔疼痛（Chronic Pelvic Pain）': {
+                        description: '持續超過六個月、非週期性的下腹部疼痛。這是一個複雜的診斷，涉及泌尿、婦科、消化系統，常見於間質性膀胱炎、慢性盆腔炎症候群。',
+                        isFemaleOnly: true, // 標記為女性專屬
+                        subsymptoms: {
+                            '疼痛位置不確定（Vague Pain Location）': '需綜合評估。考慮神經性疼痛。',
+                            '排尿/膀胱脹滿時加重（Worsens with Bladder Fullness）': '高度懷疑間質性膀胱炎。建議膀胱鏡檢查。',
+                            '合併經痛（Combined with Dysmenorrhea）': '需排除子宮內膜異位症。',
+                            '影響日常生活（Affecting Daily Life）': '多科會診，如疼痛科。'
+                        }
+                    },
+                }
+            }
+        };
+
+        const GENDER_OPTIONS = {
+            '男性 (♂)': 'MALE',
+            '女性 (♀)': 'FEMALE'
+        };
+
+        /**
+         * 根據性別過濾特定類別下的症狀
+         * @param {string} categoryName 
+         * @returns {object} 過濾後的症狀物件
+         */
+        function getFilteredSymptoms(categoryName) {
+            // 深層複製 data，避免修改原始數據
+            const symptoms = JSON.parse(JSON.stringify(data[categoryName].symptoms)); 
+            
+            for (const symptomName in symptoms) {
+                const symptomData = symptoms[symptomName];
+
+                if (selectedGender === 'FEMALE') {
+                    // 移除男性獨有症狀
+                    if (symptomData.isMaleOnly || symptomName === '睪丸痛/陰囊腫脹（Testicular Pain/Scrotal Swelling）') {
+                        delete symptoms[symptomName];
+                    }
+                } else if (selectedGender === 'MALE') {
+                    // 移除女性獨有症狀
+                    if (symptomData.isFemaleOnly) {
+                        delete symptoms[symptomName];
+                    }
+                }
+            }
+            return symptoms;
+        }
+
+        /**
+         * 根據性別替換建議中的專屬名詞
+         * @param {string} adviceText - 原始建議文字
+         * @param {string} gender - 'MALE' or 'FEMALE'
+         * @returns {string} 替換後的文字
+         */
+        function getGenderSpecificAdvice(adviceText, gender) {
+            if (gender === 'FEMALE') {
+                let text = adviceText;
+                // 1. 替換攝護腺相關的詞彙為女性常見的排尿阻塞或疼痛原因
+                text = text.replace(/攝護腺肥大/g, '膀胱頸阻塞/增厚');
+                text = text.replace(/前列腺炎/g, '間質性膀胱炎/慢性骨盆疼痛綜合症');
+                text = text.replace(/急性前列腺炎/g, '嚴重泌尿道感染/腎盂腎炎');
+                
+                // 2. 處理下腹痛中的性別描述差異
+                text = text.replace(/男性考慮慢性前列腺炎；女性排除間質性膀胱炎/g, '需排除間質性膀胱炎/慢性骨盆疼痛綜合症');
+
+                // 3. 處理其他男性專屬描述
+                text = text.replace(/尿道炎或龜頭炎/g, '尿道炎或生殖器炎症');
+                text = text.replace(/副睪炎/g, '生殖系統炎症');
+
+
+                return text;
+            }
+            return adviceText; // For MALE, return original text
+        }
+
+        /**
+         * 更新顯示螢幕上的文字和狀態
+         * @param {string} instruction 
+         * @param {string} selection 
+         */
+        function updateDisplay(instruction, selection = '') {
+            instructionText.textContent = instruction;
+            selectionText.textContent = selection;
+        }
+
+        /**
+         * 渲染可選的按鈕列表（性別、類別、症狀或子症狀）
+         * @param {object} optionsMap - 包含 key (名稱) 和 value (圖標/內容) 的物件
+         * @param {string} type - 'gender', 'category', 'symptom', or 'subsymptom'
+         */
+        function renderOptions(optionsMap, type) {
+            optionsGrid.innerHTML = '';
+            
+            const keys = Object.keys(optionsMap);
+            // 調整網格佈局：性別和類別使用 2 欄，症狀和子症狀根據數量決定
+            const cols = (type === 'gender' || type === 'category') ? 2 : (keys.length > 2 ? 2 : 1);
+            optionsGrid.className = `grid grid-cols-${cols} sm:grid-cols-2 gap-4 mb-6`;
+            
+            keys.forEach(key => {
+                const option = optionsMap[key];
+                const button = document.createElement('button');
+                // 檢查是否是 category 級別，否則直接使用 key
+                const buttonText = type === 'category' ? `${option.icon} ${key}` : key;
+                button.textContent = buttonText.replace(/（[^）]+）/g, ''); // 移除括號內的英文，讓按鈕更簡潔
+                
+                // 對於性別，data-value 是 MALE/FEMALE
+                button.dataset.value = (type === 'gender') ? option : key; 
+                
+                button.classList.add(
+                    'item-button', 
+                    'p-4', 
+                    'rounded-xl', 
+                    'text-base', 
+                    'sm:text-lg', 
+                    'font-bold', 
+                    'text-gray-200',
+                    'shadow-lg',
+                    'border-2',
+                    'border-gray-700',
+                    'break-words'
+                );
+                
+                // 處理選中狀態
+                if (type === 'gender' && selectedGender === button.dataset.value) {
+                    button.classList.add('selected', 'text-gray-900');
+                    button.classList.remove('item-button', 'text-gray-200');
+                } else if (type === 'category' && selectedCategory === key) {
+                    button.classList.add('selected', 'text-gray-900');
+                    button.classList.remove('item-button', 'text-gray-200');
+                } else if (type === 'symptom' && selectedSymptom === key) {
+                    button.classList.add('selected', 'text-gray-900');
+                    button.classList.remove('item-button', 'text-gray-200');
+                } else if (type === 'subsymptom' && selectedSubsymptoms.includes(key)) {
+                    button.classList.add('selected', 'text-gray-900');
+                    button.classList.remove('item-button', 'text-gray-200');
+                }
+
+                button.addEventListener('click', () => {
+                    if (type === 'gender') handleGenderSelect(button.dataset.value);
+                    else if (type === 'category') handleCategorySelect(key);
+                    else if (type === 'symptom') handleSymptomSelect(key);
+                    else if (type === 'subsymptom') handleSubsymptomToggle(key, button);
+                });
+                optionsGrid.appendChild(button);
+            });
+        }
+
+        // --- GENDER 處理邏輯 ---
+
+        /**
+         * 處理性別選擇
+         * @param {string} genderValue - 'MALE' or 'FEMALE'
+         */
+        function handleGenderSelect(genderValue) {
+            selectedGender = genderValue;
+            gameState = 'CATEGORY';
+
+            const categories = {};
+            for (const key in data) {
+                categories[key] = { icon: data[key].icon };
+            }
+
+            renderOptions(categories, 'category');
+            
+            const genderDisplay = genderValue === 'MALE' ? '男性 (♂)' : '女性 (♀)';
+            updateDisplay(`請選擇您的主要不適類別...`, `[性別]: ${genderDisplay}`);
+            backButton.classList.remove('hidden');
+            // 在只有兩個按鈕的階段，不需要返回按鈕，但由於後面流程有，因此保留按鈕，但控制面板中隱藏
+            // 在 SYMPTOM/SUBSYMPTOM 階段，backButton 才會真正顯示
+            backButton.classList.add('hidden'); 
+            confirmButton.disabled = true; // 類別選擇階段不能確認
+        }
+
+        /**
+         * 處理類別選擇
+         * @param {string} categoryName 
+         */
+        function handleCategorySelect(categoryName) {
+            selectedCategory = categoryName;
+            selectedSymptom = null; 
+            selectedSubsymptoms = []; 
+            gameState = 'SYMPTOM';
+            
+            // *** 使用過濾後的症狀列表 ***
+            const symptoms = getFilteredSymptoms(categoryName);
+            
+            renderOptions(symptoms, 'symptom');
+            const genderDisplay = selectedGender === 'MALE' ? '男性 (♂)' : '女性 (♀)';
+            updateDisplay(`請選擇您的具體症狀:`, `[性別]: ${genderDisplay} | [類別]: ${categoryName}`);
+            confirmButton.disabled = true;
+            backButton.classList.remove('hidden'); // 進入 SYMPTOM 階段，顯示返回
+            
+            // 隱藏並清理結果卡相關
+            resultCard.classList.add('hidden');
+            resultCard.style.display = 'none';
+            resultCard.classList.remove('print-animation');
+            redDivider.classList.remove('flashing-neon-divider'); 
+        }
+
+        /**
+         * 處理症狀選擇 (單選)
+         * @param {string} symptomName 
+         */
+        function handleSymptomSelect(symptomName) {
+            selectedSymptom = symptomName;
+            selectedSubsymptoms = []; 
+            gameState = 'SUBSYMPTOM';
+            
+            // 使用原始 data 結構來獲取子症狀（因為子症狀本身是通用的，只需要替換建議內容）
+            const subsymptoms = data[selectedCategory].symptoms[symptomName].subsymptoms; 
+            renderOptions(subsymptoms, 'subsymptom');
+            const genderDisplay = selectedGender === 'MALE' ? '男性 (♂)' : '女性 (♀)';
+            updateDisplay(`請選擇相關的子症狀 (可多選):`, `[症狀]: ${symptomName} | [性別]: ${genderDisplay}`);
+            confirmButton.disabled = true; 
+        }
+
+        /**
+         * 處理子症狀的選擇與取消 (多選)
+         * @param {string} subsymptomName 
+         * @param {HTMLElement} button 
+         */
+        function handleSubsymptomToggle(subsymptomName, button) {
+            const index = selectedSubsymptoms.indexOf(subsymptomName);
+
+            if (index > -1) {
+                selectedSubsymptoms.splice(index, 1);
+                button.classList.remove('selected', 'text-gray-900');
+                button.classList.add('item-button', 'text-gray-200');
+            } else {
+                selectedSubsymptoms.push(subsymptomName);
+                button.classList.add('selected', 'text-gray-900');
+                button.classList.remove('item-button', 'text-gray-200');
+            }
+
+            // 更新次要提示文字
+            // 在 SUBSYMPTOM 階段，次要提示可能已經是完整的，我們需要確保性別和症狀資訊保持不變
+            const baseInfo = `[症狀]: ${selectedSymptom} | [性別]: ${selectedGender === 'MALE' ? '男性 (♂)' : '女性 (♀)'}`;
+            selectionText.textContent = baseInfo + ` | [已選子項目]: ${selectedSubsymptoms.join('、') || '無'}`;
+            
+            // 只要選中一個子症狀，就可以確認
+            confirmButton.disabled = selectedSubsymptoms.length === 0;
+        }
+
+        /**
+         * 處理確認按鈕點擊 (進行模擬診斷)
+         */
+        confirmButton.addEventListener('click', () => {
+            if (gameState !== 'SUBSYMPTOM' || selectedSubsymptoms.length === 0) return;
+
+            gameState = 'PROCESSING';
+            confirmButton.disabled = true;
+            backButton.classList.add('hidden');
+            optionsGrid.innerHTML = '';
+            
+            updateDisplay('████ 掃描與處理中... ████', '系統正在匹配最相關的健康資訊，請稍候...');
+
+            resultCard.classList.add('hidden');
+            resultCard.style.display = 'none';
+            resultCard.classList.remove('print-animation');
+            redDivider.classList.remove('flashing-neon-divider'); 
+            
+            clearTimeout(neonTimeout); // 清除可能殘留的定時器
+
+            setTimeout(() => {
+                simulateDiagnosis();
+            }, 3000);
+        });
+
+        /**
+         * 模擬診斷並顯示結果卡
+         */
+        function simulateDiagnosis() {
+            try {
+                gameState = 'RESULT';
+                
+                if (!selectedCategory || !selectedSymptom || !data[selectedCategory].symptoms[selectedSymptom] || selectedSubsymptoms.length === 0) {
+                    throw new Error("診斷數據不足或無效。請重新開始。");
+                }
+
+                const symptomData = data[selectedCategory].symptoms[selectedSymptom];
+                const subsymptomsMap = symptomData.subsymptoms;
+                
+                let combinedAdvice = `<ul>`;
+                combinedAdvice += selectedSubsymptoms.map(sub => {
+                    let advice = subsymptomsMap[sub] || '此子症狀無特定模擬建議。';
+                    // *** 應用性別特定建議替換到子症狀建議內容 ***
+                    advice = getGenderSpecificAdvice(advice, selectedGender); 
+                    return `<li class="mb-2"><span class="font-extrabold text-blue-900">${sub}</span>: ${advice}</li>`;
+                }).join('');
+                combinedAdvice += `</ul>`;
+                
+                const diagnosisTitle = `診斷代碼: URO-${Math.floor(Math.random() * 900) + 100} - 初步專業建議`;
+                const genderLabel = selectedGender === 'MALE' ? '男性' : '女性';
+                let diagnosisContent = `<p class="font-medium mb-1">您的選擇 [${genderLabel}] 集中在：<span class="text-red-700">${selectedCategory} - ${selectedSymptom}</span>。</p>`;
+                
+                // *** 應用性別特定建議替換到主要描述內容 ***
+                let mainDescription = getGenderSpecificAdvice(symptomData.description, selectedGender);
+
+                diagnosisContent += `<span class="font-bold text-red-700 block mt-3">【首要建議與鑑別】</span><p class="font-medium mt-1">${mainDescription}</p>`;
+                diagnosisContent += `<span class="font-bold text-red-700 block mt-3">【細節症狀與建議】</span><div class="mt-1 text-sm space-y-1">${combinedAdvice}</div>`;
+                
+                cardTitle.textContent = diagnosisTitle;
+                cardContent.innerHTML = diagnosisContent;
+
+                // 1. 播放音效 (兩聲簡短電子音)
+                playPrintSound();
+                
+                // 2. 應用霓虹閃爍效果到紅線
+                redDivider.classList.add('flashing-neon-divider');
+
+                // 3. 顯示結果卡並應用出紙動畫 (動畫持續 1.5s)
+                resultCard.classList.remove('hidden');
+                resultCard.style.display = 'block';
+                resultCard.classList.add('print-animation');
+
+                updateDisplay(`建議卡已出爐! 請取走`, `請詳閱建議並儘速就醫。`);
+                
+                // 4. 定時器：在 5 秒 (5000ms) 後停止霓虹閃爍效果
+                neonTimeout = setTimeout(() => {
+                    redDivider.classList.remove('flashing-neon-divider');
+                    console.log("霓虹閃爍已停止。");
+                }, 5000); 
+
+                console.log("診斷完成，結果卡已嘗試顯示。");
+                backButton.classList.add('hidden');
+
+            } catch (error) {
+                console.error("模擬診斷出錯:", error);
+                cardTitle.textContent = "系統錯誤 (Error)";
+                cardContent.innerHTML = `<p class="text-red-500 font-bold">無法完成診斷。請點擊「重新開始」按鈕。</p><p class="mt-2 text-xs">技術訊息: ${error.message}</p>`;
+                resultCard.classList.remove('hidden');
+                resultCard.style.display = 'block';
+                resultCard.classList.add('print-animation');
+                redDivider.classList.remove('flashing-neon-divider'); 
+
+                updateDisplay(`診斷失敗，請重新嘗試`, `發生錯誤，請查看出口卡訊息。`);
+            } finally {
+                confirmButton.disabled = true;
+            }
+        }
+
+        /**
+         * 處理返回按鈕點擊
+         */
+        backButton.addEventListener('click', () => {
+            clearTimeout(neonTimeout); // 返回時清除定時器
+            if (gameState === 'SUBSYMPTOM') {
+                // 從子症狀返回症狀選擇
+                gameState = 'SYMPTOM';
+                const symptoms = getFilteredSymptoms(selectedCategory); // 確保返回時仍使用過濾後的列表
+                renderOptions(symptoms, 'symptom');
+                const genderDisplay = selectedGender === 'MALE' ? '男性 (♂)' : '女性 (♀)';
+                updateDisplay(`請選擇您的具體症狀:`, `[性別]: ${genderDisplay} | [類別]: ${selectedCategory}`);
+                selectedSubsymptoms = [];
+                confirmButton.disabled = true;
+            } else if (gameState === 'SYMPTOM') {
+                // 從症狀返回類別選擇
+                gameState = 'CATEGORY';
+                const categories = {};
+                for (const key in data) { categories[key] = { icon: data[key].icon }; }
+                renderOptions(categories, 'category');
+                const genderDisplay = selectedGender === 'MALE' ? '男性 (♂)' : '女性 (♀)';
+                updateDisplay(`請選擇您的主要不適類別:`, `[性別]: ${genderDisplay}`);
+                selectedCategory = null;
+                selectedSymptom = null;
+                confirmButton.disabled = true;
+                backButton.classList.add('hidden'); // 類別選擇階段隱藏返回按鈕
+            } else if (gameState === 'CATEGORY') {
+                // 從類別返回性別選擇
+                resetButton.click();
+            }
+            redDivider.classList.remove('flashing-neon-divider'); // 返回時移除閃爍
+        });
+
+        /**
+         * 處理重新開始按鈕點擊
+         */
+        resetButton.addEventListener('click', () => {
+            clearTimeout(neonTimeout); // 重置時清除定時器
+            gameState = 'GENDER';
+            selectedGender = null;
+            selectedCategory = null;
+            selectedSymptom = null;
+            selectedSubsymptoms = []; 
+            
+            // 渲染性別選項
+            renderOptions(GENDER_OPTIONS, 'gender');
+            
+            updateDisplay('泌醫關心您。歡迎使用，請選擇您的性別...');
+            
+            confirmButton.disabled = true;
+            backButton.classList.add('hidden');
+            resultCard.classList.add('hidden');
+            resultCard.style.display = 'none';
+            resultCard.classList.remove('print-animation');
+            redDivider.classList.remove('flashing-neon-divider'); 
+        });
+
+        // 頁面載入時初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            resetButton.click(); // 從 GENDER 階段開始
+        });
+
+    </script>
+</body>
+</html>
+
         
         <!-- 頂部標題和說明 -->
         <h1 class="text-3xl sm:text-4xl font-extrabold text-center mb-6 tracking-wider text-[#00c7e5]">
